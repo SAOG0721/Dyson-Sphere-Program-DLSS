@@ -2,7 +2,7 @@
 
 ## 0.5.2 - 2026-08-15
 
-- Removed all DLSS Frame Generation and Streamline code from the published SR-only source.
+- Initial public release for Dyson Sphere Program `0.10.34.28529`.
 - Added an F8 mouse-operated control panel.
 - Added Ultra Performance, Performance, Balanced, Quality, and DLAA modes using NVIDIA-recommended input sizes.
 - Replaced legacy output-space TAA jitter with zero-centered, full-range DLSS input-pixel jitter.

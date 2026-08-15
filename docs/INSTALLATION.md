@@ -1,8 +1,8 @@
 # DSP DLSS 0.5.2 安装说明
 
-适用于《戴森球计划》Steam `0.10.34.28529` / Unity `2022.3.62f3c1` 的 BepInEx 5 模组候选。
+适用于《戴森球计划》Steam `0.10.34.28529` / Unity `2022.3.62f3c1` 的 BepInEx 5 模组。
 
-本包只包含 DLSS Super Resolution / DLAA，不包含 DLSS Frame Generation、Streamline、Reflex 或代理 DLL。
+本包提供 DLSS Super Resolution / DLAA。
 
 ## 运行要求
 
@@ -78,8 +78,6 @@ Dyson Sphere Program\
 - 面板内：开启/关闭 DLSS、选择 Ultra Performance / Performance / Balanced / Quality / DLAA、开启/关闭信息显示。
 - 关闭面板时会恢复进入面板前的鼠标锁定状态。
 
-当前版本不使用 F9/F10；旧配置中残留的 `ModeCycle`、`InfoToggle` 或 `EnableToggle` 字段会被忽略。
-
 ## 验证是否加载
 
 打开：
@@ -130,14 +128,12 @@ EEB883CD39EE4D785065D8F4452C588BC962B0B60CCAF084C8404D6D2EACF6F6  BepInEx\plugin
 - 当前低分辨率输入由已经完成的全分辨率场景准备，因此可以改变 DLSS 重建档位与画质，但不会等比例降低前序 3D 渲染成本。
 - 游戏大量 GPU 间接实例对象可能缺少完整物体运动矢量；传送带货物、物流单位、敌人、火箭、戴森结构、粒子和透明物体仍需观察拖影。
 - 模组只对主世界游戏相机工作；菜单、特殊相机或非正常游戏场景会回退到游戏自身抗锯齿。
-- 本版明确不包含 DLSS FG。不要与旧实验版的 `DSPStreamlineBootstrap.dll`、`nvngx_dlssg.dll`、`sl.*`、根目录 `dxgi.dll` 或 `d3d12.dll` 混用。
-
 ## 故障排查
 
 - 没有 BepInEx 日志：先检查 BepInEx 5 x64 是否安装正确。
 - 日志显示不是 Direct3D12：确认 Steam 启动选项包含 `-force-d3d12`。
 - DLSS unavailable：检查 RTX 显卡、驱动、`NVUnityPlugin.dll` 和 `nvngx_dlss.dll` 是否位于游戏根目录。
-- 启动崩溃：先移走 `BepInEx\plugins\DSPDLSSZeroMV.dll`；若恢复，再检查其他图形代理或旧 FG/Streamline 文件冲突。
+- 启动崩溃：先移走 `BepInEx\plugins\DSPDLSSZeroMV.dll`；若恢复，再检查其他图形模组或图形代理文件冲突。
 - 画面出现拖影或网格：记录档位、输出分辨率和同场景截图，并附上 `BepInEx\LogOutput.log`。
 
 此包是特定游戏版本的实验性图形模组。覆盖原生 DLL 前务必保留备份。
