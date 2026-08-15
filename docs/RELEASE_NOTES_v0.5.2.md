@@ -29,4 +29,4 @@ Read `README-DSP-DLSS.md` inside the archive before installation. The archive in
 
 The low-resolution DLSS inputs are currently prepared after full-resolution scene rendering, so this release does not claim a proportional reduction in preceding 3D rendering cost. Procedural or indirect GPU instances may also lack complete object motion-vector coverage.
 
-ZIP SHA-256: `5653BB4123D2E9DF45ECFA14F22A7E1B8E3CFEBCCD4DBF7DBAAE726F4944BF80`
+ZIP SHA-256: `9F0216E1443A7F817C76D8B26370150BA3DE261391434D4920F2AFBC8BFD195D`
