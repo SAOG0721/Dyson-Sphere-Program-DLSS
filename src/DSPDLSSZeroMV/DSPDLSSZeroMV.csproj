@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>DSPDLSSZeroMV</AssemblyName>
+    <RootNamespace>DSPDLSSZeroMV</RootNamespace>
+    <Version>0.5.2</Version>
+    <AssemblyVersion>0.5.2.0</AssemblyVersion>
+    <FileVersion>0.5.2.0</FileVersion>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/src/DSPDLSSZeroMV</PathMap>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
+    <DSPGameDir Condition="'$(DSPGameDir)' == ''">$(DSP_GAME_DIR)</DSPGameDir>
+    <BepInExCoreDir>$(DSPGameDir)\BepInEx\core</BepInExCoreDir>
+    <ManagedDir>$(DSPGameDir)\DSPGAME_Data\Managed</ManagedDir>
+  </PropertyGroup>
+
+  <Target Name="ValidateDSPBuildPaths" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(DSPGameDir)' == ''"
+           Text="Set DSP_GAME_DIR or pass /p:DSPGameDir=&quot;path to Dyson Sphere Program&quot;." />
+    <Error Condition="!Exists('$(ManagedDir)\Assembly-CSharp.dll')"
+           Text="DSPGameDir does not point to a valid Dyson Sphere Program installation: $(DSPGameDir)" />
+    <Error Condition="!Exists('$(BepInExCoreDir)\BepInEx.dll')"
+           Text="BepInEx 5 is required at $(BepInExCoreDir)." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(ManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.NVIDIAModule">
+      <HintPath>$(ManagedDir)\UnityEngine.NVIDIAModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

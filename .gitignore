@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.log
+*.dmp
+*.pdb
+*.zip
+local.dsp.dlss.cfg
