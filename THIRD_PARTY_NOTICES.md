@@ -22,6 +22,8 @@ Unity legal terms and policies are available at:
 
 https://unity.com/legal
 
+The MIT license for Unity's NativeRenderingPlugin interface headers used by the authored native bridge is included at `licenses/Unity-NativeRenderingPlugin-MIT.txt`.
+
 ## Game assets and code
 
-The repository does not contain Dyson Sphere Program game assemblies, assets, shaders, saves, or decompiled game code. Building the mod requires the user to provide their own legally installed copy of the game.
+The repository does not contain Dyson Sphere Program game assemblies, assets, shaders, saves, or generated game-code output. Building the mod requires the user to provide their own legally installed copy of the game.

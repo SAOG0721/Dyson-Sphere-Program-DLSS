@@ -1,13 +1,14 @@
 # Changelog
 
+## 0.6.2 - 2026-08-21
+
+- Standardized the release on Direct3D 11; Steam launch options should remain empty.
+- Added an optimized native isotropic 3×3 Gaussian USM pass on the raw DLSS output.
+- Added live sharpening control from 0 to 1 in 0.05 steps, with 0 as an exact bypass and 0.50 as the default/reset value.
+- Changed controls to `F8` for DLSS enable/disable and `F9` for the control panel.
+- Kept the safe disabled-at-start default and game anti-aliasing fallback.
+- Removed NIS/NVSharpen, RCAS, Frame Generation, Streamline, D3D12, and proxy-DLL paths from the supported release scope.
+
 ## 0.5.2 - 2026-08-15
 
-- Initial public release for Dyson Sphere Program `0.10.34.28529`.
-- Added an F8 mouse-operated control panel.
-- Added Ultra Performance, Performance, Balanced, Quality, and DLAA modes using NVIDIA-recommended input sizes.
-- Replaced legacy output-space TAA jitter with zero-centered, full-range DLSS input-pixel jitter.
-- Added stage-correct projection auditing at `TaaComponent.SetProjectionMatrix`.
-- Added managed submission and NVIDIA native DebugView jitter verification.
-- Kept real Unity depth and motion-vector inputs with safe TAA fallback.
-- Restored the official matching Unity `NVUnityPlugin.dll` deployment.
-- Documented the full-resolution scene-preparation and motion-vector coverage limitations.
+- Initial public release with DLSS SR/DLAA modes, a control panel, corrected DLSS input-pixel jitter, depth and motion-vector inputs, and safe anti-aliasing fallback.

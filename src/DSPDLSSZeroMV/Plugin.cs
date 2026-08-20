@@ -1,4 +1,7 @@
 using System;
+using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -25,15 +28,21 @@ public sealed class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid = "local.dsp.dlss";
     public const string PluginName = "DSP DLSS";
-    public const string PluginVersion = "0.5.2";
+    // BepInEx 5 validates BepInPlugin versions with System.Version.TryParse:
+    // the "-dsh" build suffix is not a valid version and silently disables the
+    // plugin. Keep this string version-only.
+    public const string PluginVersion = "0.6.2";
 
     internal static Plugin Instance { get; private set; }
     internal static ManualLogSource LogSource { get; private set; }
 
     private ConfigEntry<bool> _startEnabledConfig;
+    private ConfigEntry<int> _configSchemaConfig;
     private ConfigEntry<DSPDLSSMode> _modeConfig;
     private ConfigEntry<bool> _showInfoConfig;
+    private ConfigEntry<KeyCode> _enableKeyConfig;
     private ConfigEntry<KeyCode> _panelKeyConfig;
+    private ConfigEntry<float> _sharpenConfig;
 
     private Harmony _harmony;
     private NvidiaGraphicsDevice _device;
@@ -67,7 +76,11 @@ public sealed class Plugin : BaseUnityPlugin
     private int _jitterFiniteSamples;
     private int _jitterNonZeroSamples;
     private int _jitterProjectionMatches;
+    private int _jitterShaderMatches;
     private int _jitterSubmissionMatches;
+    private int _jitterAmplitudeMatches;
+    private int _jitterExpectedPhaseMatches;
+    private int _jitterPhaseTransitionMatches;
     private int _jitterNativeSamples;
     private int _jitterNativeMatches;
     private int _jitterSequenceChanges;
@@ -76,13 +89,16 @@ public sealed class Plugin : BaseUnityPlugin
     private int _jitterPositiveY;
     private int _jitterNegativeY;
     private bool _previousJitterValid;
+    private int _previousExpectedJitterPhaseIndex = -1;
     private bool _jitterAuditLogged;
     private bool _jitterNativeMismatchLogged;
+    private bool _jitterShaderSyncFailureLogged;
     private Vector2 _previousJitter;
     private Vector2 _lastJitterPixels;
     private int _projectionAuditFrame = -1;
     private Vector2 _projectionAuditJitter;
     private bool _projectionAuditMatches;
+    private bool _projectionAuditShaderMatches;
     private readonly Vector2[] _jitterSubmissionHistory = new Vector2[32];
     private readonly int[] _jitterSubmissionSequenceHistory = new int[32];
     private int _jitterSubmissionSequence;
@@ -96,7 +112,7 @@ public sealed class Plugin : BaseUnityPlugin
     private bool _cursorStateSaved;
 
     private const int ControlWindowId = 0x445350;
-    private Rect _controlWindow = new Rect(28f, 84f, 560f, 430f);
+    private Rect _controlWindow = new Rect(28f, 84f, 560f, 500f);
 
     private DSPDLSSMode _runtimeMode;
     private DSPDLSSMode _featureMode;
@@ -106,13 +122,29 @@ public sealed class Plugin : BaseUnityPlugin
     private int _inputHeight;
     private int _outputWidth;
     private int _outputHeight;
-    private float _featureSharpness;
     private int _featureSubmitFrame = -1;
     private int _executeCount;
     private int _fallbackCount;
     private int _lastSceneIndex = -1;
     private int _lastDebugUpdateFrame;
     private int _lastRuntimeTickFrame = -1;
+
+    private IntPtr _dlssOutputPtr;
+    private bool _sharpenAvailable;
+    private bool _sharpenLoggedUnavailable;
+    private bool _sharpenDisabledLogged;
+    private bool _sharpenSuccessLogged;
+    private float _sharpenStrength;
+    private bool _sharpenSavePending;
+    private float _sharpenLastChangeTime;
+    private ulong _sharpenSubmitSequence;
+    private ulong _sharpenLastResultSequence;
+    private Vector3 _prevCameraPosition;
+    private Quaternion _prevCameraRotation;
+    private float _cameraDeltaEma;
+    private bool _cameraMotionBaselineValid;
+    private bool _blueprintActive;
+    private int _lastTeleportLogFrame = -1;
 
     private string _status = "initializing";
     private string _inputFailure = string.Empty;
@@ -123,6 +155,24 @@ public sealed class Plugin : BaseUnityPlugin
     private GUIStyle _toastStyle;
     private GUIStyle _sectionStyle;
     private GUIStyle _activeButtonStyle;
+
+    private const float SharpenStrengthMin = 0f;
+    private const float SharpenStrengthMax = 1f;
+    private const float SharpenStrengthDefault = 0.50f;
+    private const float SharpenStrengthStep = 0.05f;
+    private const float SharpenSaveDelaySeconds = 0.75f;
+    private static readonly int TaaJitterShaderId = Shader.PropertyToID("_Jitter");
+    private static readonly Vector2[] ExpectedDlssJitterPhases =
+    {
+        new Vector2(0.4375f, -0.3888889f),
+        new Vector2(0f, 0.1666667f),
+        new Vector2(0.25f, -0.1666667f),
+        new Vector2(-0.25f, 0.3888889f),
+        new Vector2(0.375f, 0.0555556f),
+        new Vector2(-0.125f, -0.2777778f),
+        new Vector2(0.125f, 0.2777778f),
+        new Vector2(-0.375f, -0.0555556f)
+    };
 
     internal bool PanelVisible => _panelVisible;
 
@@ -139,7 +189,6 @@ public sealed class Plugin : BaseUnityPlugin
         internal readonly int inputHeight;
         internal readonly int outputWidth;
         internal readonly int outputHeight;
-        internal readonly float sharpness;
 
         internal ModeSpec(
             DSPDLSSMode mode,
@@ -147,8 +196,7 @@ public sealed class Plugin : BaseUnityPlugin
             int inputWidth,
             int inputHeight,
             int outputWidth,
-            int outputHeight,
-            float sharpness)
+            int outputHeight)
         {
             this.mode = mode;
             this.quality = quality;
@@ -156,7 +204,6 @@ public sealed class Plugin : BaseUnityPlugin
             this.inputHeight = inputHeight;
             this.outputWidth = outputWidth;
             this.outputHeight = outputHeight;
-            this.sharpness = sharpness;
         }
 
         internal bool requiresPreparedInputs => inputWidth != outputWidth || inputHeight != outputHeight;
@@ -169,12 +216,74 @@ public sealed class Plugin : BaseUnityPlugin
 
         _startEnabledConfig = Config.Bind("General", "StartEnabled", false,
             "Start DLSS Super Resolution automatically. Keep false for fail-safe startup.");
+        _configSchemaConfig = Config.Bind("Internal", "ConfigSchema", 0,
+            "Internal migration marker. Do not edit manually.");
         _modeConfig = Config.Bind("General", "Mode", DSPDLSSMode.Quality,
-            "DLSS Super Resolution mode selected in the F8 control panel.");
+            "DLSS Super Resolution mode selected in the F9 control panel.");
         _showInfoConfig = Config.Bind("General", "ShowInfo", true,
             "Show the compact runtime information overlay.");
-        _panelKeyConfig = Config.Bind("Hotkeys", "PanelToggle", KeyCode.F8,
+        _enableKeyConfig = Config.Bind("Hotkeys", "EnableToggle", KeyCode.F8,
+            "Enable or disable DSP DLSS for the current game session.");
+        _panelKeyConfig = Config.Bind("Hotkeys", "PanelToggle", KeyCode.F9,
             "Open or close the mouse-operated DSP DLSS control panel.");
+        _sharpenConfig = Config.Bind("General", "SharpenStrength", SharpenStrengthDefault,
+            new ConfigDescription(
+                "Optimized 3x3 Gaussian unsharp mask applied to the original DLSS output. " +
+                "0 disables the pass exactly; 0.50 is the default.",
+                new AcceptableValueRange<float>(SharpenStrengthMin, SharpenStrengthMax)));
+
+        if (_configSchemaConfig.Value < 1)
+        {
+            if (_panelKeyConfig.Value == KeyCode.F8)
+                _panelKeyConfig.Value = KeyCode.F9;
+            _configSchemaConfig.Value = 1;
+            Config.Save();
+            Logger.LogInfo("Migrated controls to schema 1: F8 toggles DLSS and F9 opens the control panel");
+        }
+        if (_configSchemaConfig.Value < 2)
+        {
+            // DetailStrength controlled a different source-minus-prepared residual
+            // algorithm. Do not reinterpret its value as an NVSharpen strength.
+            Config.Bind("General", "DetailStrength", 0.75f,
+                "Obsolete residual re-injection setting; removed by schema 2.");
+            Config.Remove(new ConfigDefinition("General", "DetailStrength"));
+            _sharpenConfig.Value = 0.25f;
+            _configSchemaConfig.Value = 2;
+            Config.Save();
+            Logger.LogInfo("Migrated to schema 2: replaced residual detail re-injection with NVSharpen; " +
+                           "SharpenStrength reset to 0.25");
+        }
+        if (_configSchemaConfig.Value < 3)
+        {
+            // NVSharpen and Gaussian USM strengths are not numerically
+            // equivalent. Start the new algorithm at its conservative default.
+            _sharpenConfig.Value = 0.20f;
+            _configSchemaConfig.Value = 3;
+            Config.Save();
+            Logger.LogInfo("Migrated to schema 3: replaced NVSharpen with optimized 3x3 Gaussian USM; " +
+                           "SharpenStrength reset to 0.20");
+        }
+        if (_configSchemaConfig.Value < 4)
+        {
+            // 0.6.2 promotes the visually validated Gaussian USM setting to
+            // the product default. Migrate the old 0.20 default, but preserve
+            // a strength that the user already changed deliberately.
+            if (Mathf.Approximately(_sharpenConfig.Value, 0.20f))
+                _sharpenConfig.Value = SharpenStrengthDefault;
+            _configSchemaConfig.Value = 4;
+            Config.Save();
+            Logger.LogInfo($"Migrated to schema 4: Gaussian USM default is 0.50; " +
+                           $"active strength={_sharpenConfig.Value:0.00}");
+        }
+        if (_enableKeyConfig.Value == _panelKeyConfig.Value)
+            Logger.LogWarning($"DLSS EnableToggle and PanelToggle both use {_enableKeyConfig.Value}; the enable toggle takes priority");
+
+        _sharpenStrength = Mathf.Clamp(_sharpenConfig.Value, SharpenStrengthMin, SharpenStrengthMax);
+        if (!Mathf.Approximately(_sharpenStrength, _sharpenConfig.Value))
+        {
+            _sharpenConfig.Value = _sharpenStrength;
+            Config.Save();
+        }
         _runtimeEnabled = _startEnabledConfig.Value;
         _runtimeMode = _modeConfig.Value;
         _showInfo = _showInfoConfig.Value;
@@ -182,9 +291,10 @@ public sealed class Plugin : BaseUnityPlugin
         _harmony = new Harmony(PluginGuid);
         _harmony.PatchAll(typeof(Plugin).Assembly);
 
-        Logger.LogWarning("DSP DLSS 0.5.2 loaded. F8 opens the mouse control panel.");
+        Logger.LogWarning("DSP DLSS 0.6.2 loaded. D3D11 only; F8 toggles DLSS and F9 opens the mouse control panel.");
         Logger.LogInfo($"Initial state: SR={_runtimeEnabled}, mode={GetModeLabel(_runtimeMode)}, info={_showInfo}");
         InitializeNvidiaNow();
+        LoadSharpenNative();
     }
 
     private void InitializeNvidiaNow()
@@ -192,6 +302,15 @@ public sealed class Plugin : BaseUnityPlugin
         try
         {
             Logger.LogInfo($"Unity={Application.unityVersion}, API={SystemInfo.graphicsDeviceType}, GPU={SystemInfo.graphicsDeviceName}");
+            if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Direct3D11)
+            {
+                _hardDisabled = true;
+                _status = $"disabled: D3D11 required (current API: {SystemInfo.graphicsDeviceType})";
+                Logger.LogError("DSP DLSS 0.6.2 supports only the game's native Direct3D 11 renderer. " +
+                                "Remove -force-d3d12 and restart the game.");
+                return;
+            }
+
             bool loaded = NVUnityPlugin.IsLoaded() || NVUnityPlugin.Load();
             Logger.LogInfo($"NVUnityPlugin loaded={loaded}, IsLoaded={NVUnityPlugin.IsLoaded()}");
             if (!loaded && !NVUnityPlugin.IsLoaded())
@@ -213,7 +332,7 @@ public sealed class Plugin : BaseUnityPlugin
 
             _debugView = _device.CreateDebugView();
             _deviceReady = true;
-            _status = "ready; open the F8 panel to configure DLSS";
+            _status = "ready; F8 toggles DLSS, F9 opens the control panel";
             Logger.LogInfo($"NVIDIA device version={NvidiaGraphicsDevice.version}; DLSS is available");
 
             foreach (DLSSQuality quality in Enum.GetValues(typeof(DLSSQuality)))
@@ -238,13 +357,81 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
+    private void LoadSharpenNative()
+    {
+        if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Direct3D11)
+            return;
+
+        try
+        {
+            string directory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            string path = Path.Combine(directory ?? string.Empty, "DSPDLSSSharpen.dll");
+            if (!File.Exists(path))
+            {
+                Logger.LogWarning("DSPDLSSSharpen.dll not found next to the mod; Gaussian USM is unavailable: " + path);
+                return;
+            }
+            if (SharpenNative.LoadLibrary(path) == IntPtr.Zero)
+            {
+                Logger.LogWarning("DSPDLSSSharpen.dll failed to load; Gaussian USM is unavailable: " + path);
+                return;
+            }
+            _sharpenAvailable = SharpenNative.GetRenderEventFunc() != IntPtr.Zero;
+            if (_sharpenAvailable)
+            {
+                if (SharpenNative.TryGetResult(out SharpenNative.SharpenResultData existing))
+                    _sharpenLastResultSequence = existing.sequence;
+                Logger.LogInfo("Optimized 3x3 Gaussian USM native plugin loaded: " + path);
+            }
+            else
+                Logger.LogWarning("DSPDLSSSharpen.dll loaded but GetRenderEventFunc is missing");
+        }
+        catch (Exception ex)
+        {
+            _sharpenAvailable = false;
+            Logger.LogWarning("Gaussian USM native plugin unavailable: " + ex.Message);
+        }
+    }
+
+    private bool SharpenRequested => _sharpenAvailable && !_sharpenLoggedUnavailable && _sharpenConfig != null &&
+                                     _sharpenStrength > 0f;
+
+    private bool SharpenEnabled => SharpenRequested && _dlssOutputPtr != IntPtr.Zero;
+
+    private void PollSharpenStatus()
+    {
+        if (!_sharpenAvailable || !SharpenNative.TryGetResult(out SharpenNative.SharpenResultData result) ||
+            result.sequence == 0 || result.sequence == _sharpenLastResultSequence)
+            return;
+
+        _sharpenLastResultSequence = result.sequence;
+        var status = new System.Text.StringBuilder(256);
+        if (result.result != 0)
+        {
+            SharpenNative.GetStatus(status, (uint)status.Capacity);
+            Logger.LogWarning($"Gaussian USM native failure (sequence={result.sequence}, " +
+                              $"consecutive={result.consecutiveFailures}): {status}");
+            if (result.consecutiveFailures >= 3 && !_sharpenDisabledLogged)
+            {
+                _sharpenDisabledLogged = true;
+                _sharpenLoggedUnavailable = true;
+                Logger.LogWarning("Gaussian USM disabled after repeated native failures; unsharpened DLSS output remains active");
+            }
+        }
+        else if (!_sharpenSuccessLogged)
+        {
+            _sharpenSuccessLogged = true;
+            SharpenNative.GetStatus(status, (uint)status.Capacity);
+            Logger.LogInfo(status.ToString());
+        }
+    }
 
     internal void RuntimeTick(PostEffectController controller)
     {
         if (!_updateObserved)
         {
             _updateObserved = true;
-            Logger.LogInfo("Gameplay PostEffect heartbeat observed; the F8 DLSS panel is active");
+            Logger.LogInfo("Gameplay PostEffect heartbeat observed; F8 DLSS toggle and F9 control panel are active");
         }
 
         if (controller != null)
@@ -255,6 +442,7 @@ public sealed class Plugin : BaseUnityPlugin
         _lastRuntimeTickFrame = Time.frameCount;
 
         HandleHotkeys();
+        CommitSharpenStrengthIfDue();
 
         int sceneIndex = GameCamera.sceneIndex;
         if (sceneIndex != _lastSceneIndex)
@@ -262,14 +450,39 @@ public sealed class Plugin : BaseUnityPlugin
             _lastSceneIndex = sceneIndex;
             _resetHistory = true;
             ResetJitterAudit();
+            _cameraMotionBaselineValid = false;
             if (sceneIndex != 1)
                 RestoreGameAa();
         }
 
-        if (RequestedEnabled && _deviceReady && IsNormalGameplayCameraAvailable())
+        bool blueprint = IsBlueprintActive();
+        if (blueprint != _blueprintActive)
+        {
+            _blueprintActive = blueprint;
+            if (blueprint)
+                Logger.LogWarning("DLSS suspended: blueprint mode rewrites the camera projection each frame");
+        }
+
+        bool normalCamera = IsNormalGameplayCameraAvailable();
+        if (RequestedEnabled && _deviceReady && normalCamera && !blueprint)
+        {
             ArmTaaSlot();
+        }
+        else if (RequestedEnabled && _deviceReady && _profileArmed && sceneIndex == 1 && !blueprint && IsHdScreenshotPreparing())
+        {
+            // Keep the DLSS feature alive across HD screenshots: render the
+            // screenshot with the game's own AA, then resume with a history reset.
+            RestoreGameAa(keepFeature: true);
+            _resetHistory = true;
+        }
         else
+        {
             RestoreGameAa();
+        }
+
+        DetectCameraTeleport();
+
+        PollSharpenStatus();
 
         int debugInterval = _feature == null ? 120 :
             (!_featureDebugValid || _jitterNativeSamples < 16 ? 1 : 120);
@@ -282,10 +495,36 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void HandleHotkeys()
     {
-        if (_panelKeyConfig != null && Input.GetKeyDown(_panelKeyConfig.Value))
-        {
+        bool enablePressed = _enableKeyConfig != null && Input.GetKeyDown(_enableKeyConfig.Value);
+        if (enablePressed)
+            SetSuperResolutionEnabled(!_runtimeEnabled);
+
+        bool panelPressed = _panelKeyConfig != null && Input.GetKeyDown(_panelKeyConfig.Value);
+        if (panelPressed && (!enablePressed || _enableKeyConfig.Value != _panelKeyConfig.Value))
             SetPanelVisible(!_panelVisible);
-        }
+    }
+
+    private void SetSharpenStrength(float value)
+    {
+        float clamped = Mathf.Clamp(value, SharpenStrengthMin, SharpenStrengthMax);
+        float stepped = Mathf.Round(clamped / SharpenStrengthStep) * SharpenStrengthStep;
+        if (Mathf.Approximately(stepped, _sharpenStrength))
+            return;
+
+        _sharpenStrength = stepped;
+        _sharpenLastChangeTime = Time.unscaledTime;
+        _sharpenSavePending = true;
+    }
+
+    private void CommitSharpenStrengthIfDue(bool force = false)
+    {
+        if (!_sharpenSavePending || (!force && Time.unscaledTime - _sharpenLastChangeTime < SharpenSaveDelaySeconds))
+            return;
+
+        _sharpenSavePending = false;
+        _sharpenConfig.Value = _sharpenStrength;
+        Config.Save();
+        Logger.LogInfo($"Gaussian USM strength saved: {_sharpenStrength:0.00}");
     }
 
     private void SetPanelVisible(bool visible)
@@ -403,6 +642,61 @@ public sealed class Plugin : BaseUnityPlugin
         return true;
     }
 
+    private bool IsHdScreenshotPreparing()
+    {
+        return GameCamera.instance != null &&
+               GameCamera.instance.hdScreenshot != null &&
+               GameCamera.instance.hdScreenshot.preparing;
+    }
+
+    private bool IsBlueprintActive()
+    {
+        return GameCamera.instance != null && GameCamera.instance.isBlueprintMode;
+    }
+
+    private void DetectCameraTeleport()
+    {
+        Camera camera = GameCamera.main;
+        if (camera == null)
+            return;
+        if (!RequestedEnabled)
+        {
+            _cameraMotionBaselineValid = false;
+            return;
+        }
+
+        Vector3 position = camera.transform.position;
+        Quaternion rotation = camera.transform.rotation;
+        if (_cameraMotionBaselineValid)
+        {
+            float delta = (position - _prevCameraPosition).magnitude;
+            // Adaptive threshold: space flight moves the camera much faster than
+            // planet walking, so compare against an EMA of the per-frame delta.
+            // A camera cut cannot move more than a small multiple of the recent
+            // per-frame motion, while planet landings and teleports jump far beyond.
+            float threshold = Mathf.Max(4f, 8f * Mathf.Max(_cameraDeltaEma, 0.001f));
+            if (delta > threshold || Quaternion.Angle(rotation, _prevCameraRotation) > 60f)
+            {
+                _resetHistory = true;
+                ResetJitterAudit();
+                if (Time.frameCount - _lastTeleportLogFrame > 120)
+                {
+                    _lastTeleportLogFrame = Time.frameCount;
+                    Logger.LogWarning($"DLSS camera discontinuity: delta={delta:F1}m threshold={threshold:F1}m; history reset");
+                }
+            }
+            _cameraDeltaEma = Mathf.Lerp(_cameraDeltaEma, delta, 0.1f);
+        }
+        else
+        {
+            _cameraDeltaEma = 0f;
+        }
+
+        _prevCameraPosition = position;
+        _prevCameraRotation = rotation;
+        _cameraMotionBaselineValid = true;
+    }
+
     private void ArmTaaSlot()
     {
         if (_postController == null || _postController.postScript == null || _postController.postScript.profile == null)
@@ -414,7 +708,14 @@ public sealed class Plugin : BaseUnityPlugin
         PostProcessingProfile profile = _postController.postScript.profile;
         if (!_profileArmed || _armedProfile != profile)
         {
-            RestoreGameAa();
+            if (_profileArmed && _armedProfile != null && _armedProfile != profile)
+            {
+                // A different profile was previously armed: restore it and drop the
+                // now-invalid DLSS feature before arming the new one.
+                _armedProfile.antialiasing.settings = _originalAaSettings;
+                _armedProfile.antialiasing.enabled = _originalAaEnabled;
+                DestroyFeature();
+            }
             _armedProfile = profile;
             _originalAaSettings = profile.antialiasing.settings;
             _originalAaEnabled = profile.antialiasing.enabled;
@@ -437,7 +738,7 @@ public sealed class Plugin : BaseUnityPlugin
             QualitySettings.antiAliasing = 0;
     }
 
-    private void RestoreGameAa()
+    private void RestoreGameAa(bool keepFeature = false)
     {
         if (!_profileArmed)
             return;
@@ -451,7 +752,8 @@ public sealed class Plugin : BaseUnityPlugin
         QualitySettings.antiAliasing = _originalMsaa;
         _profileArmed = false;
         _armedProfile = null;
-        DestroyFeature();
+        if (!keepFeature)
+            DestroyFeature();
         _status = RequestedEnabled ? "waiting for normal gameplay camera" : "DLSS OFF; game AA restored";
         Logger.LogInfo("Restored the game's post AA and MSAA state");
     }
@@ -459,7 +761,8 @@ public sealed class Plugin : BaseUnityPlugin
     internal void CaptureJitterProjection(TaaComponent taa)
     {
         Camera camera = taa?.context?.camera;
-        if (!RequestedEnabled || camera == null || camera != GameCamera.main)
+        if (!RequestedEnabled || !_profileArmed || camera == null || camera != GameCamera.main ||
+            !IsNormalGameplayCameraAvailable() || _blueprintActive)
             return;
 
         int outputWidth = taa.context.width;
@@ -510,6 +813,28 @@ public sealed class Plugin : BaseUnityPlugin
         TaaJitterVectorField.SetValue(taa, normalizedJitter);
         camera.projectionMatrix = correctedProjection;
 
+        bool shaderMatches = false;
+        try
+        {
+            Material taaMaterial = taa.context.materialFactory.Get("Hidden/Post FX/Temporal Anti-aliasing");
+            if (taaMaterial != null)
+            {
+                taaMaterial.SetVector(TaaJitterShaderId,
+                    new Vector4(normalizedJitter.x, normalizedJitter.y, 0f, 0f));
+                Vector4 shaderJitter = taaMaterial.GetVector(TaaJitterShaderId);
+                shaderMatches = Mathf.Abs(shaderJitter.x - normalizedJitter.x) < 0.0000001f &&
+                                Mathf.Abs(shaderJitter.y - normalizedJitter.y) < 0.0000001f;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_jitterShaderSyncFailureLogged)
+            {
+                _jitterShaderSyncFailureLogged = true;
+                Logger.LogWarning("Unable to synchronize the fallback TAA shader jitter: " + ex.Message);
+            }
+        }
+
         if (_inputWidth > 0)
         {
             string signature = $"{inputWidth}x{inputHeight}->{outputWidth}x{outputHeight}";
@@ -533,6 +858,7 @@ public sealed class Plugin : BaseUnityPlugin
         _projectionAuditMatches = finite &&
             Mathf.Abs((jittered.m02 - nonJittered.m02) - expectedDeltaX) < 0.00005f &&
             Mathf.Abs((jittered.m12 - nonJittered.m12) - expectedDeltaY) < 0.00005f;
+        _projectionAuditShaderMatches = shaderMatches;
     }
 
     internal bool TryExecute(TaaComponent taa, RenderTexture source, RenderTexture destination)
@@ -542,22 +868,34 @@ public sealed class Plugin : BaseUnityPlugin
 
         Camera camera = taa.context?.camera;
         if (camera == null || camera != GameCamera.main || !IsNormalGameplayCameraAvailable())
+        {
+            // Any frame that skips evaluation leaves the NGX history stale: mark it
+            // so the next successful frame evaluates with reset=1.
+            _resetHistory = true;
             return false;
+        }
 
         Texture depth = Shader.GetGlobalTexture("_CameraDepthTexture");
         Texture motion = Shader.GetGlobalTexture("_CameraMotionVectorsTexture");
         if (!ValidateFrameInputs(source, depth, motion))
+        {
+            _resetHistory = true;
             return false;
+        }
 
         try
         {
             EnsureFeature(source.width, source.height, source.format);
             if (_feature == null || _dlssOutput == null)
+            {
+                _resetHistory = true;
                 return false;
+            }
 
             if (!_featureDebugValid)
             {
                 _status = $"creating {GetModeLabel(_runtimeMode)} feature; game TAA active";
+                _resetHistory = true;
                 return false;
             }
 
@@ -567,7 +905,9 @@ public sealed class Plugin : BaseUnityPlugin
                 -normalizedJitter.x * _inputWidth,
                 -normalizedJitter.y * _inputHeight);
             execute.reset = _resetHistory ? 1 : 0;
-            execute.sharpness = _featureSharpness;
+            // Keep deprecated NGX sharpening at zero. Gaussian USM is
+            // optionally dispatched after DLSS for both SR and DLAA.
+            execute.sharpness = 0f;
             execute.mvScaleX = -_inputWidth;
             execute.mvScaleY = -_inputHeight;
             execute.jitterOffsetX = jitterPixels.x;
@@ -609,6 +949,28 @@ public sealed class Plugin : BaseUnityPlugin
                 };
 
                 _device.ExecuteDLSS(command, _feature, textures);
+
+                if (SharpenEnabled)
+                {
+                    SharpenNative.SharpenEventData sharpenData = new SharpenNative.SharpenEventData
+                    {
+                        sequence = ++_sharpenSubmitSequence,
+                        output = _dlssOutputPtr,
+                        strength = _sharpenStrength,
+                        width = (uint)_outputWidth,
+                        height = (uint)_outputHeight
+                    };
+                    IntPtr sharpenEvent = SharpenNative.CreateEventData(ref sharpenData);
+                    if (sharpenEvent != IntPtr.Zero)
+                    {
+                        command.IssuePluginEventAndData(SharpenNative.GetRenderEventFunc(), 1, sharpenEvent);
+                    }
+                    else if (!_sharpenLoggedUnavailable)
+                    {
+                        _sharpenLoggedUnavailable = true;
+                        Logger.LogWarning("Gaussian USM event data allocation failed; unsharpened DLSS output remains active");
+                    }
+                }
                 command.Blit(_dlssOutput, destination);
                 Graphics.ExecuteCommandBuffer(command);
             }
@@ -622,6 +984,7 @@ public sealed class Plugin : BaseUnityPlugin
                 Logger.LogWarning($"DLSS inputs: mode={GetModeLabel(_featureMode)}, " +
                                   $"source={source.width}x{source.height} {source.format}, " +
                                   $"prepared={_inputWidth}x{_inputHeight}, output={_outputWidth}x{_outputHeight}, " +
+                                  $"GaussianUSM={(SharpenEnabled ? _sharpenStrength.ToString("0.00") : "off")}, " +
                                   $"depth={DescribeTexture(depth)}, motion={DescribeTexture(motion)}");
                 _inputDescriptionLogged = true;
             }
@@ -635,7 +998,8 @@ public sealed class Plugin : BaseUnityPlugin
                 execute.jitterOffsetY);
             _resetHistory = false;
             _inputFailure = string.Empty;
-            _status = $"ACTIVE · {GetModeLabel(_featureMode)} · {_inputWidth}x{_inputHeight} → {_outputWidth}x{_outputHeight}";
+            string sharpenTag = SharpenEnabled ? $" · Gaussian USM {_sharpenStrength:0.00}" : string.Empty;
+            _status = $"ACTIVE · {GetModeLabel(_featureMode)} · {_inputWidth}x{_inputHeight} → {_outputWidth}x{_outputHeight}{sharpenTag}";
             if (_executeCount == 1 || _executeCount % 600 == 0)
                 Logger.LogWarning($"DLSS Execute count={_executeCount}, mode={GetModeLabel(_featureMode)}, " +
                                   $"{_inputWidth}x{_inputHeight}->{_outputWidth}x{_outputHeight}");
@@ -652,14 +1016,17 @@ public sealed class Plugin : BaseUnityPlugin
         }
     }
 
-
     private void ResetJitterAudit()
     {
         _jitterSamples = 0;
         _jitterFiniteSamples = 0;
         _jitterNonZeroSamples = 0;
         _jitterProjectionMatches = 0;
+        _jitterShaderMatches = 0;
         _jitterSubmissionMatches = 0;
+        _jitterAmplitudeMatches = 0;
+        _jitterExpectedPhaseMatches = 0;
+        _jitterPhaseTransitionMatches = 0;
         _jitterNativeSamples = 0;
         _jitterNativeMatches = 0;
         _jitterSequenceChanges = 0;
@@ -668,6 +1035,7 @@ public sealed class Plugin : BaseUnityPlugin
         _jitterPositiveY = 0;
         _jitterNegativeY = 0;
         _previousJitterValid = false;
+        _previousExpectedJitterPhaseIndex = -1;
         _jitterAuditLogged = false;
         _jitterNativeMismatchLogged = false;
         _previousJitter = Vector2.zero;
@@ -675,6 +1043,7 @@ public sealed class Plugin : BaseUnityPlugin
         _projectionAuditFrame = -1;
         _projectionAuditJitter = Vector2.zero;
         _projectionAuditMatches = false;
+        _projectionAuditShaderMatches = false;
         Array.Clear(_jitterSubmissionHistory, 0, _jitterSubmissionHistory.Length);
         Array.Clear(_jitterSubmissionSequenceHistory, 0, _jitterSubmissionSequenceHistory.Length);
         _jitterSubmissionSequence = 0;
@@ -717,11 +1086,27 @@ public sealed class Plugin : BaseUnityPlugin
                                  _projectionAuditMatches;
         if (projectionMatches)
             _jitterProjectionMatches++;
+        if (projectionMatches && _projectionAuditShaderMatches)
+            _jitterShaderMatches++;
 
         bool submissionMatches = Mathf.Abs(submittedJitterX - jitterPixels.x) < 0.000001f &&
                                  Mathf.Abs(submittedJitterY - jitterPixels.y) < 0.000001f;
         if (submissionMatches)
             _jitterSubmissionMatches++;
+
+        bool amplitudeMatches = finite && Mathf.Abs(jitterPixels.x) <= 0.500001f &&
+                                Mathf.Abs(jitterPixels.y) <= 0.500001f;
+        if (amplitudeMatches)
+            _jitterAmplitudeMatches++;
+        int expectedPhaseIndex = finite ? GetExpectedDlssJitterPhaseIndex(jitterPixels) : -1;
+        if (expectedPhaseIndex >= 0)
+        {
+            _jitterExpectedPhaseMatches++;
+            if (_previousExpectedJitterPhaseIndex >= 0 &&
+                expectedPhaseIndex == (_previousExpectedJitterPhaseIndex + 1) % ExpectedDlssJitterPhases.Length)
+                _jitterPhaseTransitionMatches++;
+            _previousExpectedJitterPhaseIndex = expectedPhaseIndex;
+        }
 
         _previousJitter = normalizedJitter;
         _previousJitterValid = true;
@@ -782,16 +1167,24 @@ public sealed class Plugin : BaseUnityPlugin
         bool enoughSamples = _jitterSamples >= 16 && _jitterNativeSamples >= 16;
         bool passed = _jitterFiniteSamples == _jitterSamples &&
                       _jitterProjectionMatches == _jitterSamples &&
+                      _jitterShaderMatches == _jitterSamples &&
                       _jitterSubmissionMatches == _jitterSamples &&
+                       _jitterAmplitudeMatches == _jitterSamples &&
+                       _jitterExpectedPhaseMatches == _jitterSamples &&
                        _jitterNativeMatches == _jitterNativeSamples &&
                        _jitterNonZeroSamples >= (_jitterSamples * 3) / 4 &&
                        _jitterPositiveX > 0 && _jitterNegativeX > 0 &&
                        _jitterPositiveY > 0 && _jitterNegativeY > 0 &&
-                       _jitterSequenceChanges >= Math.Max(transitions - 2, 0);
+                       _jitterSequenceChanges >= Math.Max(transitions - 2, 0) &&
+                       _jitterPhaseTransitionMatches >= Math.Max(transitions - 2, 0);
         string verdict = enoughSamples ? (passed ? "PASS" : "CHECK") :
             $"checking {Math.Min(_jitterSamples, 16)}/16 native {Math.Min(_jitterNativeSamples, 16)}/16";
         _jitterStatus = $"{verdict}; projection={_jitterProjectionMatches}/{_jitterSamples}, " +
+                        $"shader={_jitterShaderMatches}/{_jitterSamples}, " +
                         $"submit={_jitterSubmissionMatches}/{_jitterSamples}, " +
+                         $"amplitude={_jitterAmplitudeMatches}/{_jitterSamples}, " +
+                         $"phase={_jitterExpectedPhaseMatches}/{_jitterSamples}, " +
+                         $"phaseStep={_jitterPhaseTransitionMatches}/{transitions}, " +
                          $"native={_jitterNativeMatches}/{_jitterNativeSamples}, " +
                          $"sequence={_jitterSequenceChanges}/{transitions}, " +
                          $"center=X+{_jitterPositiveX}/-{_jitterNegativeX} Y+{_jitterPositiveY}/-{_jitterNegativeY}, " +
@@ -813,6 +1206,19 @@ public sealed class Plugin : BaseUnityPlugin
         return !float.IsNaN(value) && !float.IsInfinity(value);
     }
 
+    private static int GetExpectedDlssJitterPhaseIndex(Vector2 jitterPixels)
+    {
+        const float tolerance = 0.00001f;
+        for (int index = 0; index < ExpectedDlssJitterPhases.Length; index++)
+        {
+            Vector2 expected = ExpectedDlssJitterPhases[index];
+            if (Mathf.Abs(jitterPixels.x - expected.x) < tolerance &&
+                Mathf.Abs(jitterPixels.y - expected.y) < tolerance)
+                return index;
+        }
+        return -1;
+    }
+
     private bool ValidateFrameInputs(RenderTexture source, Texture depth, Texture motion)
     {
         string failure = string.Empty;
@@ -820,6 +1226,8 @@ public sealed class Plugin : BaseUnityPlugin
             failure = "_CameraDepthTexture is unavailable";
         else if (motion == null)
             failure = "_CameraMotionVectorsTexture is unavailable";
+        else if (depth.width != source.width || depth.height != source.height)
+            failure = $"depth size {depth.width}x{depth.height} != source {source.width}x{source.height}";
         else if (motion.width != source.width || motion.height != source.height)
             failure = $"motion size {motion.width}x{motion.height} != source {source.width}x{source.height}";
 
@@ -857,8 +1265,7 @@ public sealed class Plugin : BaseUnityPlugin
                 outputWidth,
                 outputHeight,
                 outputWidth,
-                outputHeight,
-                0f);
+                outputHeight);
         }
 
         DLSSQuality quality = _runtimeMode switch
@@ -883,8 +1290,7 @@ public sealed class Plugin : BaseUnityPlugin
             inputWidth,
             inputHeight,
             outputWidth,
-            outputHeight,
-            optimal.sharpness);
+            outputHeight);
     }
 
     private void EnsureFeature(int outputWidth, int outputHeight, RenderTextureFormat sourceFormat)
@@ -952,8 +1358,11 @@ public sealed class Plugin : BaseUnityPlugin
             sourceFormat,
             true,
             FilterMode.Bilinear);
+        _dlssOutputPtr = _dlssOutput.GetNativeTexturePtr();
 
-        DLSSFeatureFlags flags = DLSSFeatureFlags.MVLowRes | DLSSFeatureFlags.DoSharpening;
+        // NGX sharpening remains disabled. The optional post-DLSS pass uses an
+        // optimized 3x3 Gaussian unsharp mask instead.
+        DLSSFeatureFlags flags = DLSSFeatureFlags.MVLowRes;
         if (GameCamera.main != null && GameCamera.main.allowHDR)
             flags |= DLSSFeatureFlags.IsHDR;
         if (SystemInfo.usesReversedZBuffer)
@@ -989,7 +1398,6 @@ public sealed class Plugin : BaseUnityPlugin
         _inputHeight = spec.inputHeight;
         _outputWidth = spec.outputWidth;
         _outputHeight = spec.outputHeight;
-        _featureSharpness = spec.sharpness;
         _featureSubmitFrame = Time.frameCount;
         _featureDebugValid = false;
         _inputDescriptionLogged = false;
@@ -997,7 +1405,7 @@ public sealed class Plugin : BaseUnityPlugin
 
         Logger.LogWarning($"DLSS Create submitted: mode={GetModeLabel(spec.mode)}, quality={spec.quality}, " +
                           $"{spec.inputWidth}x{spec.inputHeight}->{spec.outputWidth}x{spec.outputHeight}, " +
-                          $"format={sourceFormat}, sharpness={spec.sharpness:F3}, flags={flags}");
+                          $"format={sourceFormat}, GaussianUSMStrength={_sharpenStrength:0.00}, flags={flags}");
     }
 
     private static RenderTexture CreateRenderTexture(
@@ -1101,6 +1509,7 @@ public sealed class Plugin : BaseUnityPlugin
         ReleaseRenderTexture(ref _preparedDepth);
         ReleaseRenderTexture(ref _preparedMotion);
         ReleaseRenderTexture(ref _dlssOutput);
+        _dlssOutputPtr = IntPtr.Zero;
     }
 
     private static void ReleaseRenderTexture(ref RenderTexture texture)
@@ -1129,11 +1538,11 @@ public sealed class Plugin : BaseUnityPlugin
 
             string state = RequestedEnabled ? "ON" : "OFF";
             string dimensions = _inputWidth > 0
-                ? $"DLSS input {_inputWidth}x{_inputHeight}  ->  output {_outputWidth}x{_outputHeight}"
+                ? $"DLSS input {_inputWidth}x{_inputHeight}  ->  output {_outputWidth}x{_outputHeight}  [{(SharpenEnabled ? "Gaussian USM " + _sharpenStrength.ToString("0.00") : "off")}]"
                 : "DLSS input pending";
 
             GUI.Label(new Rect(30f, 25f, 870f, 150f),
-                $"DSP DLSS {PluginVersion}   [F8 CONTROL PANEL]   SR {state} / {GetModeLabel(_runtimeMode)}\n" +
+                $"DSP DLSS {PluginVersion}   [F8 TOGGLE / F9 PANEL]   SR {state} / {GetModeLabel(_runtimeMode)}\n" +
                 $"{_status}\nJitter: {_jitterStatus}\n{dimensions}   Execute={_executeCount}   Fallback={_fallbackCount}",
                 _labelStyle);
         }
@@ -1154,7 +1563,7 @@ public sealed class Plugin : BaseUnityPlugin
         _controlWindow.x = Mathf.Clamp(_controlWindow.x, 0f, maxX);
         _controlWindow.y = Mathf.Clamp(_controlWindow.y, 0f, maxY);
         _controlWindow = GUI.Window(ControlWindowId, _controlWindow, DrawControlWindow,
-            $"DSP DLSS {PluginVersion}  -  F8 closes this panel");
+            $"DSP DLSS {PluginVersion}  -  F8 toggles DLSS / F9 closes panel");
     }
 
     private void DrawControlWindow(int windowId)
@@ -1183,6 +1592,19 @@ public sealed class Plugin : BaseUnityPlugin
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
 
+        GUILayout.Space(8f);
+        GUILayout.BeginHorizontal();
+        GUILayout.Label($"Gaussian USM strength: {_sharpenStrength:0.00}",
+            _labelStyle, GUILayout.Width(360f));
+        if (GUILayout.Button("Reset 0.50", GUILayout.Width(150f), GUILayout.Height(26f)))
+            SetSharpenStrength(SharpenStrengthDefault);
+        GUILayout.EndHorizontal();
+        float sharpenSlider = GUILayout.HorizontalSlider(
+            _sharpenStrength, SharpenStrengthMin, SharpenStrengthMax, GUILayout.Width(510f));
+        SetSharpenStrength(sharpenSlider);
+        GUILayout.Label("Optimized 3x3 Gaussian unsharp masking for SR and DLAA (4 bilinear taps + center). " +
+                        "0 bypasses it exactly; changes preview immediately and save after the slider settles.",
+            _warningStyle);
 
         GUILayout.Space(8f);
         bool showInfo = GUILayout.Toggle(_showInfo, " Show compact technical info overlay");
@@ -1191,15 +1613,15 @@ public sealed class Plugin : BaseUnityPlugin
 
         GUILayout.Space(8f);
         string dimensions = _inputWidth > 0
-            ? $"{_inputWidth}x{_inputHeight} -> {_outputWidth}x{_outputHeight}"
+            ? $"{_inputWidth}x{_inputHeight} -> {_outputWidth}x{_outputHeight} [{(SharpenEnabled ? "Gaussian USM " + _sharpenStrength.ToString("0.00") : "off")}]"
             : "input pending";
         GUILayout.Label($"API: {SystemInfo.graphicsDeviceType}    SR: {(RequestedEnabled ? "active" : "off")}    " +
                         $"Mode: {GetModeLabel(_runtimeMode)}\n{_status}\n{dimensions}    " +
                         $"Execute={_executeCount}  Fallback={_fallbackCount}", _labelStyle);
 
         GUILayout.Space(5f);
-        GUILayout.Label("Jitter audit verifies the TAA sequence, the camera projection offset, the values submitted " +
-                        "to Unity's DLSS command and the values reported back by the native NVIDIA debug view.",
+        GUILayout.Label("Jitter audit verifies the official eight input-pixel phases, amplitude, fallback TAA shader, " +
+                        "camera projection, Unity DLSS submission and NVIDIA native debug readback.",
             _warningStyle);
 
         if (GUILayout.Button("Close panel", GUILayout.Height(30f)))
@@ -1217,7 +1639,6 @@ public sealed class Plugin : BaseUnityPlugin
             SetMode(mode);
         }
     }
-
 
     private void SetInfoVisible(bool visible)
     {
@@ -1263,6 +1684,7 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
+        CommitSharpenStrengthIfDue(force: true);
         SetPanelVisible(false);
         RestoreGameAa();
         DestroyFeature();
@@ -1298,6 +1720,46 @@ internal static class NvUnityNative
     }
 }
 
+internal static class SharpenNative
+{
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SharpenEventData
+    {
+        internal ulong sequence;
+        internal IntPtr output;
+        internal float strength;
+        internal uint width;
+        internal uint height;
+        internal uint reserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SharpenResultData
+    {
+        internal ulong sequence;
+        internal int result;
+        internal uint consecutiveFailures;
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    internal static extern IntPtr LoadLibrary(string path);
+
+    [System.Runtime.InteropServices.DllImport("DSPDLSSSharpen", EntryPoint = "DSPDLSSSharpenGetRenderEventFunc", CallingConvention = CallingConvention.StdCall)]
+    internal static extern IntPtr GetRenderEventFunc();
+
+    [System.Runtime.InteropServices.DllImport("DSPDLSSSharpen", EntryPoint = "DSPDLSSSharpenCreateEventData", CallingConvention = CallingConvention.StdCall)]
+    internal static extern IntPtr CreateEventData(ref SharpenEventData parameters);
+
+    [System.Runtime.InteropServices.DllImport("DSPDLSSSharpen", EntryPoint = "DSPDLSSSharpenReleaseEventData", CallingConvention = CallingConvention.StdCall)]
+    internal static extern void ReleaseEventData(IntPtr eventData);
+
+    [System.Runtime.InteropServices.DllImport("DSPDLSSSharpen", EntryPoint = "DSPDLSSSharpenTryGetResult", CallingConvention = CallingConvention.StdCall)]
+    [return: MarshalAs(UnmanagedType.I4)]
+    internal static extern bool TryGetResult(out SharpenResultData result);
+
+    [System.Runtime.InteropServices.DllImport("DSPDLSSSharpen", EntryPoint = "DSPDLSSSharpenGetStatus", CallingConvention = CallingConvention.StdCall, CharSet = System.Runtime.InteropServices.CharSet.Ansi)]
+    internal static extern void GetStatus(System.Text.StringBuilder buffer, uint capacity);
+}
 
 [HarmonyPatch(typeof(PostEffectController), "Update")]
 internal static class PostEffectUpdatePatch
