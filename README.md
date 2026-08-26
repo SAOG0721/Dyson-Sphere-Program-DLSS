@@ -1,146 +1,141 @@
-# Dyson Sphere Program DLSS / 戴森球计划 DLSS
+# Dyson Sphere Program DLSS / 《戴森球计划》DLSS 模组
 
-[English](#english) | [中文](#中文)
-
-## English
-
-Experimental NVIDIA DLSS Super Resolution and DLAA integration for **Dyson Sphere Program** on Direct3D 11.
-
-### Features
-
-- DLSS Ultra Performance, Performance, Balanced, Quality, and DLAA modes.
-- `F8` enables or disables DLSS; `F9` opens the mouse-operated control panel.
-- Uses the game's depth and motion-vector textures and zero-centered Halton jitter.
-- Optional optimized isotropic 3×3 Gaussian USM sharpening on the raw DLSS output, adjustable from 0 to 1; zero is an exact bypass.
-- Falls back to the game's anti-aliasing when required camera inputs are unavailable.
-- Starts disabled by default.
-
-### Compatibility
-
-- Dyson Sphere Program `0.10.34.28529` / Unity `2022.3.62f3c1`, Mono, Built-in Render Pipeline
-- Windows x64 and Direct3D 11; leave Steam launch options empty
-- BepInEx 5 x64 (`5.4.17.0` validated)
-- NVIDIA RTX GPU and a current NVIDIA driver
-
-Other game builds and hardware configurations have not been validated.
-
-### Download and installation
-
-Download `DSP-DLSS-0.6.2-BepInEx5.zip` from the [v0.6.2 release](https://github.com/SAOG0721/Dyson-Sphere-Program-DLSS/releases/tag/v0.6.2).
-
-```text
-4F02FAEBF513E29BE20E64B308B35C17D5028A2BCDB14837282B1E703CFA7B70  DSP-DLSS-0.6.2-BepInEx5.zip
-```
-
-1. Install BepInEx 5 x64 into the game directory and launch the game once.
-2. Exit the game and preserve any existing `NVUnityPlugin.dll` and `nvngx_dlss.dll` so they can be restored.
-3. Remove obsolete `BepInEx\plugins\DSPDLSSDetail.dll` and `DSPDLSSRcas.dll` from earlier experimental builds if present.
-4. Extract the release ZIP beside `DSPGAME.exe`.
-5. Leave Steam launch options empty, launch through Steam, load a save, and use `F8`/`F9`.
-
-See [installation and removal](docs/INSTALLATION.md) for file placement and checks.
-
-### Controls and configuration
-
-- `F8`: enable or disable DLSS.
-- `F9`: open or close the control panel.
-- The panel selects mode, Gaussian USM strength (0–1 in 0.05 steps), and technical information.
-- Settings are stored in `BepInEx\config\local.dsp.dlss.cfg`.
-
-### Current limitations
-
-- Lower-resolution DLSS inputs are prepared after the scene has rendered at full resolution. Reconstruction resolution and quality change, but preceding 3D rendering cost does not fall proportionally.
-- Procedural and indirect GPU instances can lack complete object motion vectors. Conveyors, cargo, logistics units, enemies, rockets, Dyson structures, particles, and transparent objects may show temporal artifacts.
-- Integration occurs after tonemapping and is limited to the main gameplay camera.
-- The release is build- and package-verified; final visual quality and long-session stability still require in-game validation on each system.
-
-### Build
-
-Managed plugin requirements: .NET SDK targeting `netstandard2.1`, BepInEx 5, and a legally installed copy of the game.
-
-```powershell
-$env:DSP_GAME_DIR = 'C:\path\to\Dyson Sphere Program'
-dotnet build .\src\DSPDLSSZeroMV\DSPDLSSZeroMV.csproj -c Release
-```
-
-Native sharpening bridge requirements: Visual Studio 2022 C++ tools, CMake, Windows SDK `fxc.exe`, and Unity NativeRenderingPlugin headers.
-
-```powershell
-cmake -S .\native\DSPDLSSSharpen -B .\native\DSPDLSSSharpen\build -G Ninja `
-  -DUNITY_NATIVE_PLUGIN_ROOT='C:\path\to\Unity-NativeRenderingPlugin\PluginSource\source'
-cmake --build .\native\DSPDLSSSharpen\build --config Release
-```
-
-The repository contains only authored mod source and documentation. It does not track build outputs, game assemblies, generated game-code output, or redistributable runtime DLLs.
-
-### Third-party components and status
-
-The binary release contains NVIDIA's DLSS runtime and the matching Unity NVIDIA native runtime required by this Unity player. See [third-party notices](THIRD_PARTY_NOTICES.md) and the license files inside the archive.
-
-This is an independent community mod and is not affiliated with or endorsed by Youthcat Studio, Gamera Games, Unity, or NVIDIA. No open-source license has been selected for the mod source at this time.
-
----
+[中文](#中文) | [English](#english)
 
 ## 中文
 
-为《戴森球计划》Direct3D 11 提供实验性的 NVIDIA DLSS 超分辨率与 DLAA 集成。
+这是为《戴森球计划》提供 NVIDIA DLSS 超分辨率与 DLAA 的社区模组。
 
-### 功能
+### 0.6.3 一体版
 
-- 支持超级性能、性能、均衡、质量和 DLAA 档位。
-- `F8` 启用或关闭 DLSS；`F9` 打开鼠标控制面板。
-- 使用游戏深度、运动矢量和以零为中心的 Halton jitter。
-- 可在 DLSS 原始输出上应用优化的各向同性 3×3 Gaussian USM 锐化，强度范围 0–1；设为 0 时完全绕过。
-- 主相机输入不满足要求时回退到游戏自身抗锯齿。
-- 默认启动时不启用 DLSS。
+`0.6.3` 是自带前置依赖的完整 ZIP。压缩包已包含 BepInEx 5.4.17 x64、DLSS 运行库以及模组所需组件，不需要另外下载或安装 BepInEx。
 
-### 兼容性
-
-- 《戴森球计划》`0.10.34.28529` / Unity `2022.3.62f3c1`、Mono、Built-in Render Pipeline
-- Windows x64、Direct3D 11；Steam 启动选项保持为空
-- BepInEx 5 x64（已验证 `5.4.17.0`）
-- NVIDIA RTX 显卡和可用的新版本驱动
-
-其他游戏版本和硬件配置尚未验证。
-
-### 下载与安装
-
-从 [v0.6.2 Release](https://github.com/SAOG0721/Dyson-Sphere-Program-DLSS/releases/tag/v0.6.2) 下载 `DSP-DLSS-0.6.2-BepInEx5.zip`。
+从 [v0.6.3 Release](https://github.com/SAOG0721/Dyson-Sphere-Program-DLSS/releases/tag/v0.6.3) 下载 `DSP-DLSS-0.6.3-All-in-One.zip`。
 
 ```text
-4F02FAEBF513E29BE20E64B308B35C17D5028A2BCDB14837282B1E703CFA7B70  DSP-DLSS-0.6.2-BepInEx5.zip
+99867758212CA025E5E2482E3CC24667E5E136CAA0AF2EED20F3FE53C846AA23  DSP-DLSS-0.6.3-All-in-One.zip
 ```
 
-1. 把 BepInEx 5 x64 安装到游戏根目录，并启动一次游戏。
-2. 退出游戏，妥善保留已有的 `NVUnityPlugin.dll` 和 `nvngx_dlss.dll`，以便需要时恢复。
-3. 若存在早期实验版的 `BepInEx\plugins\DSPDLSSDetail.dll` 或 `DSPDLSSRcas.dll`，请移除。
-4. 把发布包内容解压到 `DSPGAME.exe` 所在目录。
-5. Steam 启动选项保持为空；通过 Steam 启动并进入存档后使用 `F8` / `F9`。
+支持环境：
 
-文件位置及卸载步骤见[安装与移除说明](docs/INSTALLATION.md)。
+- 《戴森球计划》`0.10.34.28529`（Steam build `23109513`）
+- Windows 64 位
+- NVIDIA RTX 显卡及较新的 NVIDIA 驱动
+- Steam 启动选项保持默认
 
-### 操作与配置
+其他游戏版本尚未验证。
 
-- `F8`：启用或关闭 DLSS。
-- `F9`：打开或关闭控制面板。
-- 面板内可选择档位、Gaussian USM 锐化强度（0–1，步长 0.05）和技术信息显示。
-- 配置保存在 `BepInEx\config\local.dsp.dlss.cfg`。
+### 安装
 
-### 当前限制
+1. 完全退出游戏。
+2. 如果游戏已安装 BepInEx 或其他模组，请先备份游戏根目录中的 `winhttp.dll`、`doorstop_config.ini`、`NVUnityPlugin.dll`、`nvngx_dlss.dll` 和整个 `BepInEx` 文件夹。
+3. 把 ZIP 内的全部内容解压到 `DSPGAME.exe` 所在目录，并允许合并文件夹及覆盖同名文件。
+4. 保持 Steam 启动选项为默认状态，通过 Steam 启动游戏并进入存档。
+5. 按 `F8` 开启 DLSS，按 `F9` 打开控制面板。
 
-- DLSS 低分辨率输入是在场景已经完成全分辨率渲染后准备的；重建分辨率和画质会变化，但前序 3D 渲染成本不会按比例降低。
-- 大量程序化和 GPU 间接实例可能没有完整的物体运动矢量；传送带货物、物流单位、敌人、火箭、戴森结构、粒子和透明物体仍可能出现时域瑕疵。
-- 集成位置在色调映射之后，且仅作用于主世界游戏相机。
-- 发布包已完成构建与包体校验；不同系统上的最终画质和长时间稳定性仍需实际游戏验证。
+不要把 ZIP 解压到 `BepInEx\plugins`：压缩包中的目录结构已经安排好。
 
-### 构建
+### 操作
 
-托管插件需要可编译 `netstandard2.1` 的 .NET SDK、BepInEx 5 和用户合法安装的游戏。原生锐化桥接还需要 Visual Studio 2022 C++ 工具、CMake、Windows SDK `fxc.exe` 和 Unity NativeRenderingPlugin 头文件。命令见上方英文部分。
+- `F8`：开启或关闭 DLSS。
+- `F9`：打开或关闭鼠标控制面板。
+- 控制面板可选择超级性能、性能、均衡、质量和 DLAA，并可调整锐化强度及信息显示。
+- 模组首次启动默认关闭；设置保存在 `BepInEx\config\local.dsp.dlss.cfg`。
 
-仓库只包含作者编写的关键源码和说明，不跟踪构建输出、游戏程序集、代码生成结果或可再分发运行时 DLL。
+### 更新与卸载
 
-### 第三方组件与项目状态
+从旧版更新时，请退出游戏、备份现有文件，然后把新版 ZIP 重新解压到游戏目录。安装包不包含用户配置，因此通常会保留原设置。
 
-二进制发布包包含 NVIDIA DLSS 运行库，以及此 Unity Player 所需的匹配 Unity NVIDIA 原生运行库。详见[第三方说明](THIRD_PARTY_NOTICES.md)和压缩包内许可文件。
+只移除本模组时，删除：
 
-本项目是独立社区模组，与重庆柚子猫游戏、Gamera Games、Unity 或 NVIDIA 不存在隶属或背书关系。目前尚未为模组源码选择开源许可证。
+```text
+BepInEx\plugins\DSPDLSSZeroMV.dll
+BepInEx\plugins\DSPDLSSSharpen.dll
+```
+
+随后恢复安装前备份的 `NVUnityPlugin.dll` 和 `nvngx_dlss.dll`。如果没有其他模组需要 BepInEx，也可以一并移除本安装包加入的 `winhttp.dll`、`doorstop_config.ini` 和 `BepInEx` 文件夹；否则不要删除整个 BepInEx。
+
+### 常见问题
+
+- 启动即退出：确认 Steam 启动选项为默认状态，更新 NVIDIA 驱动，并检查是否仍有旧版或冲突的插件 DLL。
+- `F8` 没有效果：先进入实际游戏存档，再尝试开启。
+- 需要反馈问题时，请附上 `BepInEx\LogOutput.log`、游戏版本、显卡型号和驱动版本。
+
+### 已知限制
+
+- 切换 DLSS 档位会改变重建分辨率和画面表现，但目前不会按比例降低此前的场景渲染开销。
+- 部分传送带货物、物流单位、敌人、火箭、戴森球结构、粒子及透明物体可能出现时域残影或抖动。
+
+详细的文件位置与恢复方法见[安装说明](docs/INSTALLATION.md)。第三方组件信息见[第三方声明](THIRD_PARTY_NOTICES.md)。
+
+本项目是独立社区模组，与重庆柚子猫游戏、Gamera Games、Unity 或 NVIDIA 不存在隶属或背书关系。
+
+---
+
+## English
+
+This community mod adds NVIDIA DLSS Super Resolution and DLAA to **Dyson Sphere Program**.
+
+### Version 0.6.3 all-in-one package
+
+Version `0.6.3` is a self-contained ZIP. It includes BepInEx 5.4.17 x64, the DLSS runtime, and every runtime component required by the mod. No separate BepInEx download or installation is required.
+
+Download `DSP-DLSS-0.6.3-All-in-One.zip` from the [v0.6.3 release](https://github.com/SAOG0721/Dyson-Sphere-Program-DLSS/releases/tag/v0.6.3).
+
+```text
+99867758212CA025E5E2482E3CC24667E5E136CAA0AF2EED20F3FE53C846AA23  DSP-DLSS-0.6.3-All-in-One.zip
+```
+
+Supported environment:
+
+- Dyson Sphere Program `0.10.34.28529` (Steam build `23109513`)
+- 64-bit Windows
+- NVIDIA RTX GPU with a recent NVIDIA driver
+- Default Steam launch options
+
+Other game versions have not been validated.
+
+### Installation
+
+1. Close the game completely.
+2. If BepInEx or other mods are already installed, back up `winhttp.dll`, `doorstop_config.ini`, `NVUnityPlugin.dll`, `nvngx_dlss.dll`, and the entire `BepInEx` folder from the game directory.
+3. Extract everything from the ZIP beside `DSPGAME.exe`, allowing folder merging and replacement of matching files.
+4. Keep Steam launch options at their defaults, start the game through Steam, and load a save.
+5. Press `F8` to enable DLSS and `F9` to open the control panel.
+
+Do not extract the ZIP directly into `BepInEx\plugins`; the archive already contains the correct directory structure.
+
+### Controls
+
+- `F8`: enable or disable DLSS.
+- `F9`: open or close the mouse-operated control panel.
+- The panel provides Ultra Performance, Performance, Balanced, Quality, and DLAA modes, plus sharpening strength and information display controls.
+- The mod starts disabled on first launch. Settings are stored in `BepInEx\config\local.dsp.dlss.cfg`.
+
+### Updating and removal
+
+To update from an earlier version, close the game, back up the existing files, and extract the new ZIP into the game directory. The package does not contain a user configuration file, so existing settings are normally preserved.
+
+To remove only this mod, delete:
+
+```text
+BepInEx\plugins\DSPDLSSZeroMV.dll
+BepInEx\plugins\DSPDLSSSharpen.dll
+```
+
+Then restore the `NVUnityPlugin.dll` and `nvngx_dlss.dll` files backed up before installation. If no other mods need BepInEx, you may also remove the package's `winhttp.dll`, `doorstop_config.ini`, and `BepInEx` folder. Do not remove the whole BepInEx installation when other mods use it.
+
+### Troubleshooting
+
+- Game exits during startup: restore default Steam launch options, update the NVIDIA driver, and check for obsolete or conflicting plugin DLLs.
+- `F8` has no effect: load an actual gameplay save before enabling DLSS.
+- When reporting a problem, include `BepInEx\LogOutput.log`, the game version, GPU model, and driver version.
+
+### Known limitations
+
+- DLSS modes change reconstruction resolution and image presentation, but currently do not proportionally reduce earlier scene-rendering work.
+- Some conveyor cargo, logistics units, enemies, rockets, Dyson structures, particles, and transparent objects may show temporal ghosting or jitter.
+
+See the [installation guide](docs/INSTALLATION.md) for file placement and recovery details. See [third-party notices](THIRD_PARTY_NOTICES.md) for bundled components.
+
+This is an independent community mod and is not affiliated with or endorsed by Youthcat Studio, Gamera Games, Unity, or NVIDIA.

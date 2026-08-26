@@ -31,7 +31,7 @@ public sealed class Plugin : BaseUnityPlugin
     // BepInEx 5 validates BepInPlugin versions with System.Version.TryParse:
     // the "-dsh" build suffix is not a valid version and silently disables the
     // plugin. Keep this string version-only.
-    public const string PluginVersion = "0.6.2";
+    public const string PluginVersion = "0.6.3";
 
     internal static Plugin Instance { get; private set; }
     internal static ManualLogSource LogSource { get; private set; }
@@ -291,7 +291,7 @@ public sealed class Plugin : BaseUnityPlugin
         _harmony = new Harmony(PluginGuid);
         _harmony.PatchAll(typeof(Plugin).Assembly);
 
-        Logger.LogWarning("DSP DLSS 0.6.2 loaded. D3D11 only; F8 toggles DLSS and F9 opens the mouse control panel.");
+        Logger.LogWarning("DSP DLSS 0.6.3 loaded. D3D11 only; F8 toggles DLSS and F9 opens the mouse control panel.");
         Logger.LogInfo($"Initial state: SR={_runtimeEnabled}, mode={GetModeLabel(_runtimeMode)}, info={_showInfo}");
         InitializeNvidiaNow();
         LoadSharpenNative();
@@ -306,7 +306,7 @@ public sealed class Plugin : BaseUnityPlugin
             {
                 _hardDisabled = true;
                 _status = $"disabled: D3D11 required (current API: {SystemInfo.graphicsDeviceType})";
-                Logger.LogError("DSP DLSS 0.6.2 supports only the game's native Direct3D 11 renderer. " +
+                Logger.LogError("DSP DLSS 0.6.3 supports only the game's native Direct3D 11 renderer. " +
                                 "Remove -force-d3d12 and restart the game.");
                 return;
             }

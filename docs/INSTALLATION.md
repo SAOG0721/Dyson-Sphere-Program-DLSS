@@ -1,36 +1,93 @@
-# DSP DLSS 0.6.2 installation / 安装说明
+# DSP DLSS 0.6.3 安装说明 / Installation Guide
 
-## Install / 安装
+## 中文
 
-1. Close the game. / 退出游戏。
-2. Install BepInEx 5 x64 and launch the game once. / 安装 BepInEx 5 x64 并启动一次游戏。
-3. Preserve existing `NVUnityPlugin.dll` and `nvngx_dlss.dll` so they can be restored. / 妥善保留已有的两个同名 DLL，以便恢复。
-4. Remove obsolete `BepInEx\plugins\DSPDLSSDetail.dll` and `DSPDLSSRcas.dll` if present. / 若存在早期实验版的这两个插件，请移除。
-5. Extract the ZIP beside `DSPGAME.exe`. / 把 ZIP 内容解压到 `DSPGAME.exe` 所在目录。
-6. Leave Steam launch options empty and launch through Steam. / Steam 启动选项保持为空，并通过 Steam 启动。
+### 安装位置
 
-Expected runtime files / 运行文件位置：
+把 `DSP-DLSS-0.6.3-All-in-One.zip` 的全部内容解压到 `DSPGAME.exe` 所在目录。正确结构如下：
 
 ```text
 Dyson Sphere Program\
+├─ DSPGAME.exe
+├─ winhttp.dll
+├─ doorstop_config.ini
 ├─ NVUnityPlugin.dll
 ├─ nvngx_dlss.dll
 └─ BepInEx\
+   ├─ core\
    └─ plugins\
       ├─ DSPDLSSZeroMV.dll
       └─ DSPDLSSSharpen.dll
 ```
 
-Use `F8` to enable or disable DLSS and `F9` to open the panel. The mod starts disabled. / 使用 `F8` 启用或关闭 DLSS，使用 `F9` 打开面板；模组默认不启用。
+本版本已经包含 BepInEx 5.4.17 x64 和所需运行组件，不需要单独安装前置。
 
-## Upgrade / 升级
+### 安装前备份
 
-Close the game, remove the two obsolete plugin DLLs listed above, and overwrite the four runtime files from the new archive. Keep `BepInEx\config\local.dsp.dlss.cfg` to retain settings. / 退出游戏，移除上述两个旧插件 DLL，再覆盖新版压缩包中的四个运行文件；保留配置文件即可继承设置。
+如果游戏已经安装 BepInEx 或其他模组，请先备份游戏根目录中的 `winhttp.dll`、`doorstop_config.ini`、`NVUnityPlugin.dll`、`nvngx_dlss.dll` 和整个 `BepInEx` 文件夹。关闭游戏后再复制或覆盖文件。
 
-## Remove / 卸载
+### 启动
 
-Close the game, remove `DSPDLSSZeroMV.dll` and `DSPDLSSSharpen.dll`, then restore your previous root-level `NVUnityPlugin.dll` and `nvngx_dlss.dll`. Optionally remove `BepInEx\config\local.dsp.dlss.cfg`. Do not remove the entire BepInEx directory if other mods use it. / 退出游戏，删除两个 DSP DLSS 插件 DLL，并恢复原有的两个根目录运行库；配置文件可按需删除。若其他模组仍使用 BepInEx，请勿删除整个 BepInEx 目录。
+Steam 启动选项保持默认。通过 Steam 启动游戏、进入存档，然后按 `F8` 开启 DLSS；按 `F9` 打开控制面板。第一次启动默认关闭 DLSS。
 
-## Verify / 校验
+### 更新
 
-Compare files with `SHA256SUMS.txt` inside the archive. The outer ZIP digest is published as a separate `.sha256` release asset. / 使用包内 `SHA256SUMS.txt` 校验各文件；ZIP 整包哈希作为独立 `.sha256` Release 附件发布。
+退出游戏并备份现有文件，然后把新版 ZIP 重新解压到游戏目录并覆盖同名文件。压缩包不包含 `BepInEx\config\local.dsp.dlss.cfg`，已有设置通常会保留。
+
+### 卸载
+
+只卸载本模组时，删除：
+
+```text
+BepInEx\plugins\DSPDLSSZeroMV.dll
+BepInEx\plugins\DSPDLSSSharpen.dll
+```
+
+恢复安装前备份的 `NVUnityPlugin.dll` 和 `nvngx_dlss.dll`。如果没有其他模组使用 BepInEx，可再删除本安装包加入的 `winhttp.dll`、`doorstop_config.ini` 和 `BepInEx` 文件夹。
+
+---
+
+## English
+
+### Install location
+
+Extract all contents of `DSP-DLSS-0.6.3-All-in-One.zip` beside `DSPGAME.exe`. The resulting layout should be:
+
+```text
+Dyson Sphere Program\
+├─ DSPGAME.exe
+├─ winhttp.dll
+├─ doorstop_config.ini
+├─ NVUnityPlugin.dll
+├─ nvngx_dlss.dll
+└─ BepInEx\
+   ├─ core\
+   └─ plugins\
+      ├─ DSPDLSSZeroMV.dll
+      └─ DSPDLSSSharpen.dll
+```
+
+This release already includes BepInEx 5.4.17 x64 and all required runtime components. No separate prerequisite installation is needed.
+
+### Back up before installation
+
+If BepInEx or other mods are already installed, back up `winhttp.dll`, `doorstop_config.ini`, `NVUnityPlugin.dll`, `nvngx_dlss.dll`, and the entire `BepInEx` folder from the game directory. Close the game before copying or replacing files.
+
+### Start the mod
+
+Keep Steam launch options at their defaults. Start the game through Steam, load a save, press `F8` to enable DLSS, and press `F9` to open the control panel. DLSS starts disabled on first launch.
+
+### Update
+
+Close the game, back up the current files, then extract the new ZIP into the game directory and replace matching files. The archive does not contain `BepInEx\config\local.dsp.dlss.cfg`, so existing settings are normally preserved.
+
+### Remove
+
+To remove only this mod, delete:
+
+```text
+BepInEx\plugins\DSPDLSSZeroMV.dll
+BepInEx\plugins\DSPDLSSSharpen.dll
+```
+
+Restore the `NVUnityPlugin.dll` and `nvngx_dlss.dll` files backed up before installation. If no other mods use BepInEx, you may also remove the package's `winhttp.dll`, `doorstop_config.ini`, and `BepInEx` folder.

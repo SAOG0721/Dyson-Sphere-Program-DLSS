@@ -1,29 +1,21 @@
-# Third-party notices
+# Third-party notices / 第三方声明
 
-Dyson Sphere Program DLSS is an independent community mod and is not affiliated with or endorsed by Youthcat Studio, Gamera Games, Unity, or NVIDIA.
+Dyson Sphere Program DLSS is an independent community mod and is not affiliated with or endorsed by Youthcat Studio, Gamera Games, Unity, NVIDIA, or the BepInEx project.
 
-## NVIDIA DLSS runtime
+《戴森球计划》DLSS 模组是独立社区项目，与重庆柚子猫游戏、Gamera Games、Unity、NVIDIA 或 BepInEx 项目不存在隶属或背书关系。
 
-The binary release includes `nvngx_dlss.dll` version 3.1.11. NVIDIA DLSS, NGX, GeForce RTX, and related names are trademarks and technology of NVIDIA Corporation.
+## Bundled release components / 发布包内组件
 
-The NVIDIA RTX SDK license supplied with the runtime is included in the release archive as:
+- **BepInEx 5.4.17 x64** and its runtime dependencies. Corresponding license texts are included under `licenses/`.
+- **UnityDoorstop 3.4.0.0** (`winhttp.dll`). Its CC0 1.0 text is included as `licenses/UnityDoorstop-CC0-1.0.txt`.
+- **NVIDIA DLSS runtime** (`nvngx_dlss.dll` 3.1.11). The NVIDIA RTX SDK license supplied with the runtime is included as `licenses/nvngx_dlss.license.txt`.
+- **Unity NVIDIA native runtime** (`NVUnityPlugin.dll`) matching Unity 2022.3.62f3. Its package notice is included as `licenses/UNITY-NATIVE-RUNTIME-NOTICE.txt`; Unity legal terms are available at https://unity.com/legal.
+- The Unity NativeRenderingPlugin interface headers used by the native mod component are MIT licensed; the license is included as `licenses/Unity-NativeRenderingPlugin-MIT.txt`.
 
-`licenses/nvngx_dlss.license.txt`
+发布包同时附带上述组件的授权或声明文件。第三方组件的名称与商标归各自权利人所有。
 
-The mod does not claim ownership of the NVIDIA runtime and does not represent that NVIDIA sponsors or endorses this project.
+## Game content / 游戏内容
 
-## Unity NVIDIA native runtime
+The source repository does not contain Dyson Sphere Program game assemblies, assets, saves, or generated game code. Building the mod requires a legally installed copy of the game.
 
-The binary release includes `NVUnityPlugin.dll` from the Windows 64-bit non-development Mono player support files of Unity `2022.3.62f3`. Unity and associated marks are trademarks of Unity Technologies.
-
-This native runtime is included only to interoperate with the matching Unity player and its bundled `UnityEngine.NVIDIAModule.dll`. The mod does not claim ownership of Unity components.
-
-Unity legal terms and policies are available at:
-
-https://unity.com/legal
-
-The MIT license for Unity's NativeRenderingPlugin interface headers used by the authored native bridge is included at `licenses/Unity-NativeRenderingPlugin-MIT.txt`.
-
-## Game assets and code
-
-The repository does not contain Dyson Sphere Program game assemblies, assets, shaders, saves, or generated game-code output. Building the mod requires the user to provide their own legally installed copy of the game.
+源代码仓库不包含《戴森球计划》的程序集、资源、存档或生成代码；构建模组需要用户自行合法安装游戏。
